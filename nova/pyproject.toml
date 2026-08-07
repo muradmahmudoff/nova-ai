@@ -1,0 +1,60 @@
+[project]
+name = "nova-ai"
+version = "0.1.0"
+description = "Şəxsi AI köməkçi - Nova"
+requires-python = ">=3.11"
+dependencies = [
+    # ---- Əsas server (backend) asılılıqları - Docker/Railway/Render bunları quraşdırır ----
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.30",
+    "websockets>=12.0",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "sqlalchemy[asyncio]>=2.0",
+    "aiosqlite>=0.20",
+    "chromadb>=0.5",
+    "langgraph>=0.1",
+    "langchain-core>=0.2",
+    "openai>=1.30",
+    "anthropic>=0.28",
+    "google-generativeai>=0.7",
+    "httpx>=0.27",
+    "numpy>=1.26",
+    "python-dotenv>=1.0",
+    "loguru>=0.7",
+    "langdetect>=1.0.9",
+    "PyPDF2>=3.0",
+    "python-docx>=1.1",
+    "pillow>=10.3",
+    "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+# Səs funksiyaları (STT/TTS/wake-word) - server-side işləyə bilir, amma ağır və
+# yavaş build olur. Cloud-da lazım deyilsə (yalnız mətn chat), bunu quraşdırma.
+audio = [
+    "faster-whisper>=1.0",
+    "piper-tts>=1.2",
+    "openwakeword>=0.5",
+]
+# Desktop GUI - YALNIZ öz kompüterində PySide6 tətbiqini işlətmək üçün.
+# Bunu HEÇ VAXT server/Docker/Railway-ə quraşdırma - orada işləmir və build-i sındırır.
+gui = [
+    "PySide6>=6.7",
+    "sounddevice>=0.4",
+]
+dev = ["pytest>=8.2", "pytest-asyncio>=0.23", "black>=24.4", "ruff>=0.4"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.setuptools.packages.find]
+# Yalnız bunlar Python paketi kimi quraşdırılsın - web/, deploy/, data/, models/,
+# logs/, tests/, scripts/ qovluqları paket deyil (data/asset/skript qovluqlarıdır),
+# ona görə setuptools-un avtomatik "flat-layout" axtarışı onları qarışdırmasın deyə
+# aydın siyahı veririk.
+include = ["app", "app.*", "config"]

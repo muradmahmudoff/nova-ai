@@ -1,0 +1,29 @@
+version: "3.9"
+
+services:
+  nova-backend:
+    build: .
+    container_name: nova-ai-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/nova/data
+      - ./logs:/nova/logs
+      - ./models:/nova/models
+      - ./.env:/nova/.env
+    env_file:
+      - .env
+    restart: unless-stopped
+
+  # İstəyə bağlı: tam lokal LLM üçün Ollama servisi
+  ollama:
+    image: ollama/ollama:latest
+    container_name: nova-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+
+volumes:
+  ollama_data:

@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="az">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nova AI</title>
+<style>
+  :root {
+    --bg: #18181b; --panel: #27272a; --accent: #2563eb;
+    --accent-hover: #1d4ed8; --text: #f4f4f5; --muted: #a1a1aa; --danger: #dc2626;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column;
+  }
+  header {
+    padding: 14px 20px; border-bottom: 1px solid #3f3f46; display: flex;
+    align-items: center; justify-content: space-between;
+  }
+  header h1 { font-size: 18px; margin: 0; }
+  header button {
+    background: var(--panel); color: var(--text); border: 1px solid #3f3f46;
+    padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 13px;
+  }
+  #messages {
+    flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 10px;
+  }
+  .bubble { max-width: 70%; padding: 10px 14px; border-radius: 14px; line-height: 1.4; white-space: pre-wrap; }
+  .user { align-self: flex-end; background: var(--accent); color: white; }
+  .assistant { align-self: flex-start; background: var(--panel); color: var(--text); }
+  .status { align-self: center; color: var(--muted); font-size: 12px; }
+  #inputbar { display: flex; gap: 8px; padding: 14px 20px; border-top: 1px solid #3f3f46; }
+  #textInput {
+    flex: 1; padding: 12px 14px; border-radius: 10px; border: 1px solid #3f3f46;
+    background: var(--panel); color: var(--text); font-size: 14px; outline: none;
+  }
+  button.action { border: none; border-radius: 10px; padding: 12px 18px; cursor: pointer; font-size: 14px; }
+  #sendBtn { background: var(--accent); color: white; }
+  #sendBtn:hover { background: var(--accent-hover); }
+  #micBtn { background: var(--panel); color: white; width: 48px; font-size: 18px; }
+  #micBtn.listening { background: var(--danger); }
+  #settingsModal {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+    align-items: center; justify-content: center;
+  }
+  #settingsBox {
+    background: var(--panel); padding: 20px; border-radius: 12px; width: 320px;
+  }
+  #settingsBox label { display: block; margin: 10px 0 4px; font-size: 13px; color: var(--muted); }
+  #settingsBox select, #settingsBox input {
+    width: 100%; padding: 8px; border-radius: 8px; border: 1px solid #3f3f46;
+    background: var(--bg); color: var(--text);
+  }
+  #settingsBox .row { display: flex; gap: 8px; margin-top: 16px; }
+  #settingsBox button { flex: 1; padding: 10px; border-radius: 8px; border: none; cursor: pointer; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🤖 Nova AI</h1>
+  <button id="settingsBtn">Parametrlər</button>
+</header>
+
+<div id="messages">
+  <div class="bubble assistant">Salam! Mən Nova, sənin şəxsi AI köməkçinəm. Necə kömək edə bilərəm?</div>
+</div>
+
+<div id="inputbar">
+  <input id="textInput" type="text" placeholder="Nova-ya mesaj yaz..." />
+  <button id="micBtn" class="action">🎙</button>
+  <button id="sendBtn" class="action">Göndər</button>
+</div>
+
+<div id="settingsModal">
+  <div id="settingsBox">
+    <h3 style="margin-top:0;">Parametrlər</h3>
+    <label>LLM Provayder</label>
+    <select id="providerSelect">
+      <option value="local">local (Ollama)</option>
+      <option value="openai">OpenAI</option>
+      <option value="anthropic">Anthropic</option>
+      <option value="gemini">Gemini</option>
+      <option value="openrouter">OpenRouter</option>
+    </select>
+    <div class="row">
+      <button id="saveSettingsBtn" style="background:var(--accent);color:white;">Yadda saxla</button>
+      <button id="clearMemoryBtn" style="background:var(--danger);color:white;">Yaddaşı təmizlə</button>
+      <button id="closeSettingsBtn" style="background:#3f3f46;color:white;">Bağla</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Vercel-də deploy edərkən bu dəyəri backend-inin real ünvanı ilə əvəz et
+  // (Railway/Render/VPS-də işə saldığın Nova backend-inin URL-i).
+  // Lokal test zamanı boş saxla - onda avtomatik olaraq eyni origin istifadə olunur.
+  window.NOVA_API_BASE = "https://your-backend-url.up.railway.app";
+</script>
+<script>
+const API_BASE = window.NOVA_API_BASE || window.location.origin;
+const WS_BASE = API_BASE.replace(/^http/, "ws");
+
+let conversationId = null;
+
+const messagesEl = document.getElementById("messages");
+const textInput = document.getElementById("textInput");
+const sendBtn = document.getElementById("sendBtn");
+const micBtn = document.getElementById("micBtn");
+
+function addBubble(text, role) {
+  const div = document.createElement("div");
+  div.className = "bubble " + (role === "user" ? "user" : "assistant");
+  div.textContent = text;
+  messagesEl.appendChild(div);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  return div;
+}
+
+function addStatus(text) {
+  const div = document.createElement("div");
+  div.className = "status";
+  div.textContent = text;
+  messagesEl.appendChild(div);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  return div;
+}
+
+// ---- Mətnlə söhbət (REST) ----
+async function sendTextMessage() {
+  const text = textInput.value.trim();
+  if (!text) return;
+  addBubble(text, "user");
+  textInput.value = "";
+  const statusEl = addStatus("Nova yazır...");
+
+  try {
+    const resp = await fetch(`${API_BASE}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conversation_id: conversationId, message: text }),
+    });
+    if (!resp.ok) throw new Error(`Server xətası: ${resp.status}`);
+    const data = await resp.json();
+    conversationId = data.conversation_id;
+    statusEl.remove();
+    addBubble(data.response, "assistant");
+  } catch (err) {
+    statusEl.remove();
+    addBubble("⚠ Serverə qoşula bilmədim: " + err.message, "assistant");
+  }
+}
+
+sendBtn.addEventListener("click", sendTextMessage);
+textInput.addEventListener("keydown", (e) => { if (e.key === "Enter") sendTextMessage(); });
+
+// ---- Səsli söhbət (WebSocket + brauzer mikrofonu) ----
+let ws = null;
+let mediaRecorder = null;
+let audioContext = null;
+let listening = false;
+
+async function startListening() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+    const source = audioContext.createMediaStreamSource(stream);
+    const processor = audioContext.createScriptProcessor(4096, 1, 1);
+
+    ws = new WebSocket(`${WS_BASE}/ws/voice`);
+    ws.onopen = () => {
+      listening = true;
+      micBtn.classList.add("listening");
+      addStatus("🎙 Dinləyirəm...");
+    };
+
+    ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+      if (msg.type === "transcript") {
+        addBubble(msg.text, "user");
+      } else if (msg.type === "response_text") {
+        addBubble(msg.text, "assistant");
+      } else if (msg.type === "response_audio") {
+        const audio = new Audio("data:audio/wav;base64," + msg.data);
+        audio.play();
+      } else if (msg.type === "error") {
+        addBubble("⚠ " + msg.message, "assistant");
+      }
+    };
+
+    processor.onaudioprocess = (e) => {
+      if (!listening || ws.readyState !== WebSocket.OPEN) return;
+      const input = e.inputBuffer.getChannelData(0);
+      const pcm16 = new Int16Array(input.length);
+      for (let i = 0; i < input.length; i++) {
+        pcm16[i] = Math.max(-32768, Math.min(32767, input[i] * 32768));
+      }
+      const bytes = new Uint8Array(pcm16.buffer);
+      let binary = "";
+      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+      ws.send(JSON.stringify({ type: "audio_chunk", data: btoa(binary) }));
+    };
+
+    source.connect(processor);
+    processor.connect(audioContext.destination);
+
+    window._novaStream = stream;
+    window._novaProcessor = processor;
+  } catch (err) {
+    addBubble("⚠ Mikrofona giriş alına bilmədi: " + err.message, "assistant");
+  }
+}
+
+function stopListening() {
+  listening = false;
+  micBtn.classList.remove("listening");
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: "audio_end" }));
+  }
+  if (window._novaStream) window._novaStream.getTracks().forEach((t) => t.stop());
+  if (window._novaProcessor) window._novaProcessor.disconnect();
+  if (audioContext) audioContext.close();
+}
+
+micBtn.addEventListener("click", () => {
+  if (!listening) startListening(); else stopListening();
+});
+
+// ---- Parametrlər ----
+const settingsModal = document.getElementById("settingsModal");
+document.getElementById("settingsBtn").addEventListener("click", async () => {
+  settingsModal.style.display = "flex";
+  try {
+    const resp = await fetch(`${API_BASE}/api/settings`);
+    const data = await resp.json();
+    document.getElementById("providerSelect").value = data.llm_provider;
+  } catch (e) {}
+});
+document.getElementById("closeSettingsBtn").addEventListener("click", () => {
+  settingsModal.style.display = "none";
+});
+document.getElementById("saveSettingsBtn").addEventListener("click", async () => {
+  const provider = document.getElementById("providerSelect").value;
+  await fetch(`${API_BASE}/api/settings/provider`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ provider }),
+  });
+  settingsModal.style.display = "none";
+});
+document.getElementById("clearMemoryBtn").addEventListener("click", async () => {
+  await fetch(`${API_BASE}/api/settings/memory/clear`, { method: "POST" });
+  settingsModal.style.display = "none";
+});
+</script>
+</body>
+</html>

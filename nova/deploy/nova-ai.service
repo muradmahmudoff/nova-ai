@@ -1,0 +1,26 @@
+# Nova AI - systemd servis faylı
+# Yerləşdirmə: /etc/systemd/system/nova-ai.service
+#
+# Quraşdırma:
+#   sudo cp deploy/nova-ai.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable nova-ai
+#   sudo systemctl start nova-ai
+#   sudo systemctl status nova-ai
+#   journalctl -u nova-ai -f     (log-lara baxmaq üçün)
+
+[Unit]
+Description=Nova AI Backend Server
+After=network.target
+
+[Service]
+Type=simple
+User=nova
+WorkingDirectory=/opt/nova-ai
+Environment="PATH=/opt/nova-ai/.venv/bin"
+ExecStart=/opt/nova-ai/.venv/bin/python scripts/run_server.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
